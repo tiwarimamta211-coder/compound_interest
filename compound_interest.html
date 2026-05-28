@@ -1,0 +1,223 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Compound Interest Explorer</title>
+<style>
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  body { font-family: 'Segoe UI', sans-serif; background: #0f172a; color: #e2e8f0; min-height: 100vh; padding: 24px; }
+  h1 { text-align: center; font-size: 1.6rem; margin-bottom: 4px; color: #f8fafc; }
+  .subtitle { text-align: center; color: #94a3b8; font-size: 0.85rem; margin-bottom: 24px; }
+  .container { max-width: 860px; margin: 0 auto; }
+  .controls { background: #1e293b; border-radius: 16px; padding: 20px; margin-bottom: 20px; display: grid; grid-template-columns: 1fr 1fr; gap: 16px; }
+  .control-group label { display: block; font-size: 0.78rem; color: #94a3b8; margin-bottom: 6px; text-transform: uppercase; letter-spacing: 0.05em; }
+  .control-group .value { font-size: 1.3rem; font-weight: 700; color: #38bdf8; margin-bottom: 8px; }
+  input[type=range] { width: 100%; accent-color: #38bdf8; cursor: pointer; }
+  .stats { display: grid; grid-template-columns: repeat(3, 1fr); gap: 12px; margin-bottom: 20px; }
+  .stat { background: #1e293b; border-radius: 12px; padding: 16px; text-align: center; }
+  .stat .label { font-size: 0.75rem; color: #94a3b8; text-transform: uppercase; letter-spacing: 0.05em; margin-bottom: 6px; }
+  .stat .amount { font-size: 1.4rem; font-weight: 800; }
+  .stat.principal .amount { color: #64748b; }
+  .stat.interest .amount { color: #f59e0b; }
+  .stat.total .amount { color: #4ade80; }
+  .chart-wrap { background: #1e293b; border-radius: 16px; padding: 20px; }
+  canvas { width: 100%; display: block; }
+  .legend { display: flex; gap: 20px; justify-content: center; margin-top: 12px; }
+  .legend-item { display: flex; align-items: center; gap: 6px; font-size: 0.8rem; color: #94a3b8; }
+  .legend-dot { width: 12px; height: 12px; border-radius: 3px; }
+  .formula { background: #1e293b; border-radius: 12px; padding: 16px; margin-top: 16px; text-align: center; font-size: 0.85rem; color: #94a3b8; }
+  .formula span { color: #38bdf8; font-weight: 600; }
+</style>
+</head>
+<body>
+<div class="container">
+  <h1>💰 Compound Interest Explorer</h1>
+  <p class="subtitle">Watch your money grow exponentially over time</p>
+
+  <div class="controls">
+    <div class="control-group">
+      <label>Initial Investment</label>
+      <div class="value" id="principalVal">₹1,00,000</div>
+      <input type="range" id="principal" min="10000" max="1000000" step="10000" value="100000">
+    </div>
+    <div class="control-group">
+      <label>Annual Interest Rate</label>
+      <div class="value" id="rateVal">8%</div>
+      <input type="range" id="rate" min="1" max="20" step="0.5" value="8">
+    </div>
+    <div class="control-group">
+      <label>Time Period (Years)</label>
+      <div class="value" id="yearsVal">20 yrs</div>
+      <input type="range" id="years" min="1" max="40" step="1" value="20">
+    </div>
+    <div class="control-group">
+      <label>Compounding Frequency</label>
+      <div class="value" id="freqVal">Annually</div>
+      <input type="range" id="freq" min="0" max="3" step="1" value="0">
+    </div>
+  </div>
+
+  <div class="stats">
+    <div class="stat principal">
+      <div class="label">Principal</div>
+      <div class="amount" id="statPrincipal">₹1,00,000</div>
+    </div>
+    <div class="stat interest">
+      <div class="label">Interest Earned</div>
+      <div class="amount" id="statInterest">₹3,66,096</div>
+    </div>
+    <div class="stat total">
+      <div class="label">Final Amount</div>
+      <div class="amount" id="statTotal">₹4,66,096</div>
+    </div>
+  </div>
+
+  <div class="chart-wrap">
+    <canvas id="chart" height="260"></canvas>
+    <div class="legend">
+      <div class="legend-item"><div class="legend-dot" style="background:#334155"></div>Principal</div>
+      <div class="legend-item"><div class="legend-dot" style="background:#f59e0b"></div>Compound Interest</div>
+      <div class="legend-item"><div class="legend-dot" style="background:#475569;border:1px dashed #94a3b8"></div>Simple Interest</div>
+    </div>
+  </div>
+
+  <div class="formula">
+    A = P × (1 + r/n)<sup>nt</sup> &nbsp;|&nbsp;
+    <span>P</span> = Principal &nbsp; <span>r</span> = Rate &nbsp; <span>n</span> = Compounding/yr &nbsp; <span>t</span> = Time
+  </div>
+</div>
+
+<script>
+const freqLabels = ['Annually', 'Quarterly', 'Monthly', 'Daily'];
+const freqValues = [1, 4, 12, 365];
+
+function fmt(n) {
+  if (n >= 10000000) return '₹' + (n/10000000).toFixed(2) + 'Cr';
+  if (n >= 100000) return '₹' + (n/100000).toFixed(2) + 'L';
+  return '₹' + Math.round(n).toLocaleString('en-IN');
+}
+
+function compute(P, r, n, t) {
+  return P * Math.pow(1 + r / (n * 100), n * t);
+}
+
+function getInputs() {
+  return {
+    P: +document.getElementById('principal').value,
+    r: +document.getElementById('rate').value,
+    n: freqValues[+document.getElementById('freq').value],
+    t: +document.getElementById('years').value,
+  };
+}
+
+function update() {
+  const { P, r, n, t } = getInputs();
+  document.getElementById('principalVal').textContent = fmt(P);
+  document.getElementById('rateVal').textContent = r + '%';
+  document.getElementById('yearsVal').textContent = t + ' yrs';
+  document.getElementById('freqVal').textContent = freqLabels[+document.getElementById('freq').value];
+
+  const final = compute(P, r, n, t);
+  document.getElementById('statPrincipal').textContent = fmt(P);
+  document.getElementById('statInterest').textContent = fmt(final - P);
+  document.getElementById('statTotal').textContent = fmt(final);
+
+  drawChart(P, r, n, t);
+}
+
+function drawChart(P, r, n, t) {
+  const canvas = document.getElementById('chart');
+  const dpr = window.devicePixelRatio || 1;
+  const W = canvas.parentElement.clientWidth - 40;
+  const H = 260;
+  canvas.width = W * dpr;
+  canvas.height = H * dpr;
+  canvas.style.width = W + 'px';
+  canvas.style.height = H + 'px';
+  const ctx = canvas.getContext('2d');
+  ctx.scale(dpr, dpr);
+
+  const pad = { top: 20, right: 20, bottom: 36, left: 70 };
+  const cw = W - pad.left - pad.right;
+  const ch = H - pad.top - pad.bottom;
+
+  // Data
+  const years = Array.from({length: t + 1}, (_, i) => i);
+  const compound = years.map(y => compute(P, r, n, y));
+  const simple = years.map(y => P * (1 + (r / 100) * y));
+  const maxVal = compound[t];
+
+  function xPos(y) { return pad.left + (y / t) * cw; }
+  function yPos(v) { return pad.top + ch - (v / maxVal) * ch; }
+
+  ctx.clearRect(0, 0, W, H);
+
+  // Grid
+  ctx.strokeStyle = '#1e3a5f22';
+  ctx.lineWidth = 1;
+  for (let i = 0; i <= 4; i++) {
+    const y = pad.top + (i / 4) * ch;
+    ctx.beginPath(); ctx.moveTo(pad.left, y); ctx.lineTo(pad.left + cw, y); ctx.stroke();
+    const val = maxVal * (1 - i / 4);
+    ctx.fillStyle = '#64748b';
+    ctx.font = '11px Segoe UI';
+    ctx.textAlign = 'right';
+    ctx.fillText(fmt(val), pad.left - 6, y + 4);
+  }
+
+  // X axis labels
+  ctx.fillStyle = '#64748b';
+  ctx.textAlign = 'center';
+  ctx.font = '11px Segoe UI';
+  const step = Math.max(1, Math.floor(t / 8));
+  for (let y = 0; y <= t; y += step) {
+    ctx.fillText('Yr ' + y, xPos(y), H - pad.bottom + 16);
+  }
+
+  // Principal fill
+  ctx.fillStyle = '#1e3a5f';
+  ctx.beginPath();
+  ctx.moveTo(xPos(0), yPos(P));
+  for (let y = 0; y <= t; y++) ctx.lineTo(xPos(y), yPos(P));
+  ctx.lineTo(xPos(t), yPos(0));
+  ctx.lineTo(xPos(0), yPos(0));
+  ctx.closePath();
+  ctx.fill();
+
+  // Compound fill
+  const grad = ctx.createLinearGradient(0, pad.top, 0, pad.top + ch);
+  grad.addColorStop(0, '#f59e0b88');
+  grad.addColorStop(1, '#f59e0b22');
+  ctx.fillStyle = grad;
+  ctx.beginPath();
+  ctx.moveTo(xPos(0), yPos(P));
+  for (let y = 0; y <= t; y++) ctx.lineTo(xPos(y), yPos(compound[y]));
+  ctx.lineTo(xPos(t), yPos(P));
+  for (let y = t; y >= 0; y--) ctx.lineTo(xPos(y), yPos(P));
+  ctx.closePath();
+  ctx.fill();
+
+  // Compound line
+  ctx.strokeStyle = '#f59e0b';
+  ctx.lineWidth = 2.5;
+  ctx.beginPath();
+  years.forEach((y, i) => i === 0 ? ctx.moveTo(xPos(y), yPos(compound[y])) : ctx.lineTo(xPos(y), yPos(compound[y])));
+  ctx.stroke();
+
+  // Simple interest dashed line
+  ctx.strokeStyle = '#94a3b8';
+  ctx.lineWidth = 1.5;
+  ctx.setLineDash([5, 4]);
+  ctx.beginPath();
+  years.forEach((y, i) => i === 0 ? ctx.moveTo(xPos(y), yPos(simple[y])) : ctx.lineTo(xPos(y), yPos(simple[y])));
+  ctx.stroke();
+  ctx.setLineDash([]);
+}
+
+['principal','rate','years','freq'].forEach(id => document.getElementById(id).addEventListener('input', update));
+window.addEventListener('resize', update);
+update();
+</script>
+</body>
+</html>
